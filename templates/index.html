@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>COVID-19 Data Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌍 COVID-19 Data Dashboard</h1>
+            <p class="subtitle">Real-time global pandemic statistics</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="country-select">Select Country:</label>
+                <select id="country-select">
+                    <option value="global">Global</option>
+                    {% for country in countries %}
+                        <option value="{{ country.name }}">{{ country.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="days-select">Time Period:</label>
+                <select id="days-select">
+                    <option value="7">Last 7 Days</option>
+                    <option value="14">Last 14 Days</option>
+                    <option value="30" selected>Last 30 Days</option>
+                    <option value="60">Last 60 Days</option>
+                    <option value="90">Last 90 Days</option>
+                </select>
+            </div>
+            <button id="refresh-btn" onclick="refreshData()">🔄 Refresh Data</button>
+        </div>
+
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <h3>Total Cases</h3>
+                <p class="stat-number" id="total-cases">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Total Deaths</h3>
+                <p class="stat-number" id="total-deaths">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Recovered</h3>
+                <p class="stat-number" id="total-recovered">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Active Cases</h3>
+                <p class="stat-number" id="active-cases">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Critical Cases</h3>
+                <p class="stat-number" id="critical-cases">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Total Tests</h3>
+                <p class="stat-number" id="total-tests">Loading...</p>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div id="cases-chart" class="chart"></div>
+        </div>
+
+        <div class="chart-container">
+            <div id="daily-chart" class="chart"></div>
+        </div>
+
+        <div class="chart-container">
+            <div id="country-chart" class="chart"></div>
+        </div>
+
+        <footer>
+            <p>Data source: <a href="https://disease.sh" target="_blank">disease.sh API</a></p>
+            <p>Last updated: <span id="last-updated">Loading...</span></p>
+        </footer>
+    </div>
+
+    <script>
+        let currentCountry = 'global';
+        let currentDays = 30;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            const countrySelect = document.getElementById('country-select');
+            const daysSelect = document.getElementById('days-select');
+
+            countrySelect.addEventListener('change', function() {
+                currentCountry = this.value;
+                refreshData();
+            });
+
+            daysSelect.addEventListener('change', function() {
+                currentDays = parseInt(this.value);
+                refreshData();
+            });
+
+            refreshData();
+            // Auto-refresh every 5 minutes
+            setInterval(refreshData, 300000);
+        });
+
+        function refreshData() {
+            updateStats();
+            updateCharts();
+        }
+
+        async function updateStats() {
+            try {
+                let response;
+                if (currentCountry === 'global') {
+                    response = await fetch('/api/global_stats');
+                } else {
+                    response = await fetch(`/api/country_stats?country=${encodeURIComponent(currentCountry)}`);
+                }
+                
+                if (!response.ok) throw new Error('Failed to fetch stats');
+                const data = await response.json();
+                
+                document.getElementById('total-cases').textContent = formatNumber(data.total_cases);
+                document.getElementById('total-deaths').textContent = formatNumber(data.total_deaths);
+                document.getElementById('total-recovered').textContent = formatNumber(data.total_recovered);
+                document.getElementById('active-cases').textContent = formatNumber(data.active_cases);
+                document.getElementById('critical-cases').textContent = formatNumber(data.critical_cases);
+                document.getElementById('total-tests').textContent = formatNumber(data.total_tests);
+                
+                if (data.last_updated) {
+                    document.getElementById('last-updated').textContent = data.last_updated;
+                }
+            } catch (error) {
+                console.error('Error updating stats:', error);
+                document.getElementById('total-cases').textContent = 'Error';
+            }
+        }
+
+        async function updateCharts() {
+            try {
+                const url = `/api/chart_data?country=${encodeURIComponent(currentCountry)}&days=${currentDays}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) throw new Error('Failed to fetch chart data');
+                const data = await response.json();
+                
+                // Render cases chart
+                if (data.cases_over_time) {
+                    const casesData = JSON.parse(data.cases_over_time);
+                    Plotly.newPlot('cases-chart', casesData.data, casesData.layout);
+                }
+                
+                // Render daily chart
+                if (data.daily_new_cases) {
+                    const dailyData = JSON.parse(data.daily_new_cases);
+                    Plotly.newPlot('daily-chart', dailyData.data, dailyData.layout);
+                }
+            } catch (error) {
+                console.error('Error updating charts:', error);
+            }
+        }
+
+        function formatNumber(num) {
+            if (!num) return '0';
+            if (num >= 1e9) return (num / 1e9).toFixed(1) + 'B';
+            if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
+            if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+            return num.toLocaleString();
+        }
+    </script>
+</body>
+</html>
